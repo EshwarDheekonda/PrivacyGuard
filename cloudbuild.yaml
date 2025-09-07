@@ -34,7 +34,7 @@ steps:
       - '--min-instances'
       - '0'
       - '--set-env-vars'
-      - 'PORT=8080,GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      - 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
 
 images:
   - 'gcr.io/$PROJECT_ID/pii-backend:$COMMIT_SHA'
@@ -42,3 +42,4 @@ images:
 options:
   machineType: 'E2_HIGHCPU_8'
   logging: CLOUD_LOGGING_ONLY
+
