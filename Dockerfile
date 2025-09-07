@@ -1,5 +1,7 @@
+# Use the official Python image as a parent image.
 FROM python:3.11-slim
 
+# Set the working directory in the container.
 WORKDIR /app
 
 # Install system dependencies with error handling
@@ -30,4 +32,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/apify/health || exit 1
 
-CMD ["python", "gcp_app.py"]
+# Corrected CMD to run Hypercorn
+CMD ["hypercorn", "-b", "0.0.0.0:8080", "test0812:app"]
