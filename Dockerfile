@@ -1,36 +1,39 @@
-# Use the official Python image as a parent image.
-FROM python:3.11-slim
+# Stage 1: Build dependencies
+FROM python:3.11-slim as builder
 
-# Set the working directory in the container.
-WORKDIR /app
-
-# Install system dependencies with error handling
+# Install system dependencies needed for building Python packages
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    curl \
     build-essential \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first
+WORKDIR /app
 COPY requirements.txt .
 
-# Install Python packages with timeout and retries
-RUN pip install --no-cache-dir --timeout=120 --retries=3 -r requirements.txt
+# Install Python packages and create a "virtual environment" in /install
+RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
 
-# Create non-root user
+# Stage 2: Final image for the application
+FROM python:3.11-slim
+
+# Create and switch to the non-root user
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
 USER app
+WORKDIR /app
 
-EXPOSE 8080
+# Copy installed packages from the builder stage
+COPY --from=builder /install /usr/local
+# Copy the application code
+COPY . .
 
-# Simplified health check
+# Use the PORT environment variable provided by Cloud Run
+ENV PORT 8080
+
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/apify/health || exit 1
+    CMD curl -f http://localhost:$PORT/apify/health || exit 1
 
-# Corrected CMD to run Hypercorn
-CMD ["hypercorn", "-b", "0.0.0.0:8080", "test0812:app"]
+# Start the application with Hypercorn
+CMD ["hypercorn", "-b", "0.0.0.0:$PORT", "test0812:app"]
