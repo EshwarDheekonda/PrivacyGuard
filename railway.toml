@@ -1,0 +1,14 @@
+# railway.toml
+[build]
+  builder = "nixpacks"
+  buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+  startCommand = "python test0812.py"
+  healthcheckPath = "/apify/health"
+  healthcheckTimeout = 300
+  restartPolicyType = "on_failure"
+
+[env]
+  PORT = "5000"
+  PYTHONUNBUFFERED = "1"
