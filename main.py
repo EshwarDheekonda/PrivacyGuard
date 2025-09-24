@@ -57,17 +57,11 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS Configuration
+# CORS Configuration - ALLOW ALL ORIGINS FOR TESTING
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Local development
-        "http://localhost:5173",  # Vite dev server
-        "https://*.lovable.dev",  # Lovable frontend domains
-        "https://*.vercel.app",   # Vercel deployments
-        "https://*.netlify.app",  # Netlify deployments
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins for testing
+    allow_credentials=False,  # Must be False when using "*"
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
