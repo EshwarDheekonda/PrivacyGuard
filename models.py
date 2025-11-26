@@ -9,10 +9,6 @@ class SearchResult:
     title: str
     description: str
     domain: str
-    relevance_score: int = 0
-    content_type: str = "webpage"
-    platform: str = ""
-    username: str = ""
 
 @dataclass
 class ExtractionResult:
