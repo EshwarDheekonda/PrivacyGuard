@@ -42,6 +42,7 @@ URL_FETCH_TIMEOUT = 30
 try:
     import cloudscraper
     from fake_useragent import UserAgent
+
     ENHANCED_SCRAPING = True
     ua = UserAgent()
 except ImportError:
@@ -56,9 +57,10 @@ USER_AGENTS = [
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 ]
 
+
 class GoogleCustomSearchAPI:
     """Google Custom Search API implementation"""
-    
+
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_CUSTOM_SEARCH_API_KEY")
         self.search_engine_id = os.getenv("GOOGLE_CUSTOM_SEARCH_ENGINE_ID")
@@ -68,7 +70,7 @@ class GoogleCustomSearchAPI:
         """Check if Google Custom Search API is properly configured"""
         return bool(self.api_key and self.search_engine_id)
 
-    async def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+    async def search(self, query: str, parameters: List[str], max_results) -> List[SearchResult]:
         """Search using Google Custom Search API"""
         if not self.is_available():
             logger.warning("Google Custom Search API not configured")
@@ -80,7 +82,7 @@ class GoogleCustomSearchAPI:
 
             for page in range(requests_needed):
                 start_index = page * 10 + 1
-                page_results = await self._search_page(query, start_index)
+                page_results = await self._search_page(query, parameters, start_index)
                 results.extend(page_results)
 
                 if len(results) >= max_results or len(page_results) < 10:
@@ -95,8 +97,50 @@ class GoogleCustomSearchAPI:
             logger.error(f"Google Custom Search API error: {e}")
             return []
 
-    async def _search_page(self, query: str, start_index: int = 1) -> List[SearchResult]:
+    async def _search_page(self, query: str, parameters: List[str], start_index) -> List[SearchResult]:
         """Search a single page using Google Custom Search API"""
+
+        results: List[SearchResult] = []
+
+        if parameters:
+            for param in parameters:
+                params = {
+                    'key': self.api_key,
+                    'cx': self.search_engine_id,
+                    'q': query,
+                    'start': start_index,
+                    'num': 10,
+                    'safe': 'medium',
+                    'fields': 'items(title,link,snippet,displayLink),searchInformation(totalResults)',
+                    'exactTerms': param
+                }
+
+                logger.info(f"Params before {params}")
+
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(self.base_url, params=params) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                self._parse_custom_search_results(data, results)
+                            elif response.status == 429:
+                                logger.warning("Google Custom Search API rate limit exceeded")
+                            elif response.status == 403:
+                                logger.warning("Google Custom Search API quota exceeded or invalid credentials")
+                            else:
+                                logger.warning(f"Google Custom Search API returned status {response.status}")
+                except asyncio.TimeoutError:
+                    logger.error("Google Custom Search API timeout")
+                except Exception as e:
+                    logger.error(f"Error in Google Custom Search API request: {e}")
+
+        if parameters:
+            return results
+
+        logging.info("No Results found for specific parameters now searching with the query")
+
+        results: List[SearchResult] = []
+
         params = {
             'key': self.api_key,
             'cx': self.search_engine_id,
@@ -112,7 +156,7 @@ class GoogleCustomSearchAPI:
                 async with session.get(self.base_url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return self._parse_custom_search_results(data, query)
+                        self._parse_custom_search_results(data, results)
                     elif response.status == 429:
                         logger.warning("Google Custom Search API rate limit exceeded")
                         return []
@@ -122,7 +166,6 @@ class GoogleCustomSearchAPI:
                     else:
                         logger.warning(f"Google Custom Search API returned status {response.status}")
                         return []
-
         except asyncio.TimeoutError:
             logger.error("Google Custom Search API timeout")
             return []
@@ -130,9 +173,14 @@ class GoogleCustomSearchAPI:
             logger.error(f"Error in Google Custom Search API request: {e}")
             return []
 
-    def _parse_custom_search_results(self, data: dict, query: str) -> List[SearchResult]:
+        return results
+
+    def _parse_custom_search_results(self, data: dict, results : List[SearchResult]):
         """Parse Google Custom Search API response"""
-        results = []
+
+        logger.info(f"Parsing results for {data}")
+
+
         items = data.get('items', [])
 
         for item in items:
@@ -149,15 +197,13 @@ class GoogleCustomSearchAPI:
                     url=url,
                     title=title,
                     description=snippet,
-                    domain=display_link or urlparse(url).netloc,
-                    relevance_score=self._calculate_relevance(query, title, snippet, url)
+                    domain=display_link or urlparse(url).netloc
                 ))
-
             except Exception as e:
                 logger.warning(f"Error parsing search result: {e}")
                 continue
 
-        return results
+        logger.info(f"Google Custom Search API  Results parsing {results}")
 
     def _is_valid_url(self, url: str) -> bool:
         """Validate if URL is worth including"""
@@ -182,43 +228,6 @@ class GoogleCustomSearchAPI:
 
         return True
 
-    def _calculate_relevance(self, query: str, title: str, description: str, url: str = "") -> int:
-        """Calculate relevance score for search results"""
-        score = 0
-        query_terms = query.lower().split()
-
-        title_lower = title.lower() if title else ""
-        description_lower = description.lower() if description else ""
-        url_lower = url.lower() if url else ""
-
-        for term in query_terms:
-            if term in title_lower:
-                score += 15
-            if term in description_lower:
-                score += 5
-            if term in url_lower:
-                score += 3
-
-        if query.lower() in title_lower:
-            score += 25
-        if query.lower() in description_lower:
-            score += 10
-
-        if url:
-            high_authority_domains = [
-                'wikipedia.org', 'linkedin.com', 'facebook.com', 'twitter.com',
-                'instagram.com', 'youtube.com', 'github.com', 'stackoverflow.com',
-                'medium.com', 'blogspot.com', 'wordpress.com'
-            ]
-
-            domain = urlparse(url).netloc.lower()
-            if any(auth_domain in domain for auth_domain in high_authority_domains):
-                score += 10
-
-        if any(term.istitle() for term in query.split()):
-            score += 5
-
-        return max(score, 1)
 
 class OptimizedWebScraper:
     """Optimized web scraper with single attempt and fast timeouts"""
@@ -317,6 +326,7 @@ class OptimizedWebScraper:
             logger.error(f"Cloudscraper failed for {url}: {e}")
             return None
 
+
 class AdvancedSearchEngine:
     """Enhanced search engine with Google Custom Search API integration"""
 
@@ -357,32 +367,26 @@ class AdvancedSearchEngine:
             'Cache-Control': 'max-age=0',
         }
 
-    async def search_multiple_engines(self, query: str, max_results: int = 25) -> List[SearchResult]:
+    async def search_multiple_engines(self, query: str, parameters: str, max_results) -> List[SearchResult]:
         """Search using Google Custom Search API only"""
         all_results = []
+
+        if parameters:
+            parameters = parameters.split(",")
+
+        logger.info(f"Searching with {parameters}")
 
         # Primary: Google Custom Search API (most reliable)
         if self.google_custom_search.is_available():
             try:
-                custom_search_results = await self.google_custom_search.search(query, max_results)
+                custom_search_results = await self.google_custom_search.search(query, parameters, max_results)
                 all_results.extend(custom_search_results)
                 logger.info(f"Google Custom Search API returned {len(custom_search_results)} results")
             except Exception as e:
                 logger.error(f"Google Custom Search API failed: {e}")
 
-        # Fallback: Direct Google search with BeautifulSoup (if Custom Search API is not available)
-        if len(all_results) < max_results:
-            try:
-                remaining_results = max_results - len(all_results)
-                google_results = await self._search_google_direct(query, remaining_results)
-                all_results.extend(google_results)
-                logger.info(f"Direct Google search returned {len(google_results)} additional results")
-            except Exception as e:
-                logger.error(f"Direct Google search failed: {e}")
-
-        # Remove duplicates and sort by relevance
-        unique_results = self._deduplicate_results(all_results)
-        return sorted(unique_results, key=lambda x: x.relevance_score, reverse=True)[:max_results]
+        logger.info(f"Google Custom Search API returned {len(all_results)} results")
+        return all_results
 
     async def _search_google_direct(self, query: str, max_results: int) -> List[SearchResult]:
         """Direct Google search using BeautifulSoup - Fallback method"""
@@ -435,8 +439,7 @@ class AdvancedSearchEngine:
                         url=url,
                         title=title,
                         description=description,
-                        domain=urlparse(url).netloc,
-                        relevance_score=self._calculate_relevance(query, title, description, url)
+                        domain=urlparse(url).netloc
                     ))
 
                 except Exception as e:
@@ -534,145 +537,27 @@ class SocialMediaSearcher:
 
     async def find_social_accounts(self, name: str) -> Dict[str, List[SearchResult]]:
         """Find social media accounts with enhanced platform-specific searching"""
-        platforms = {
-            "facebook": [f'"{name}" site:facebook.com'],
-            "twitter": [f'"{name}" site:twitter.com', f'"{name}" site:x.com'],
-            "instagram": [f'"{name}" site:instagram.com'],
-            "linkedin": [f'"{name}" site:linkedin.com/in/', f'"{name}" site:linkedin.com/pub/'],
-            "tiktok": [f'"{name}" site:tiktok.com'],
-            "youtube": [f'"{name}" site:youtube.com/channel/', f'"{name}" site:youtube.com/c/',
-                        f'"{name}" site:youtube.com/@'],
-        }
+        print("inside find_social_accounts")
+        platforms = [
+            "facebook",
+            "twitter",
+            "instagram",
+            "linkedin",
+            "tiktok",
+            "youtube"
+        ]
 
         social_results = {}
 
-        for platform, queries in platforms.items():
+        for platform in platforms:
             try:
-                platform_results = []
-
-                # Try each query for the platform
-                for query in queries:
-                    results = await self.search_engine.search_multiple_engines(query, max_results=5)
-
-                    # Filter and validate social media URLs
-                    for result in results:
-                        if self._is_valid_social_url(result.url, platform):
-                            result.platform = platform
-                            result.username = self._extract_username(result.url, platform)
-                            result.content_type = "social_media"
-                            platform_results.append(result)
-
-                # Remove duplicates within platform
-                platform_results = self._deduplicate_social_results(platform_results)
-                social_results[platform] = platform_results[:3]  # Limit to top 3 per platform
-                logger.info(f"Found {len(platform_results)} {platform} profiles")
-
-                # Add delay between platform searches
-                await asyncio.sleep(1)
-
+                results = await self.search_engine.search_multiple_engines(name, f"site:{platform}.com", max_results=3)
+                logger.info(f"Result for platform :{platform}")
+                social_results[platform] = results
             except Exception as e:
                 logger.error(f"Error searching {platform} for {name}: {e}")
                 social_results[platform] = []
-
         return social_results
-
-    def _is_valid_social_url(self, url: str, platform: str) -> bool:
-        """Enhanced validation for social media URLs"""
-        url_lower = url.lower()
-
-        # Common exclusions for all platforms
-        common_exclusions = ["help", "support", "about", "privacy", "terms", "login", "signup", "posts", "photos",
-                             "videos"]
-        if any(exclusion in url_lower for exclusion in common_exclusions):
-            return False
-
-        # Platform-specific validation
-        if platform == "facebook":
-            return ("facebook.com/" in url_lower and
-                    not any(exclude in url_lower for exclude in
-                            ["events", "groups", "pages/category", "marketplace", "gaming", "watch"]))
-
-        elif platform == "twitter":
-            return (("twitter.com/" in url_lower or "x.com/" in url_lower) and
-                    not any(exclude in url_lower for exclude in
-                            ["status", "search", "hashtag", "lists", "i/web", "explore", "home"]))
-
-        elif platform == "instagram":
-            return ("instagram.com/" in url_lower and
-                    not any(exclude in url_lower for exclude in
-                            ["p/", "explore", "tv", "reel", "stories", "direct"]))
-
-        elif platform == "linkedin":
-            return ("linkedin.com/" in url_lower and
-                    any(valid in url_lower for valid in ["/in/", "/pub/"]))
-
-        elif platform == "tiktok":
-            return ("tiktok.com/" in url_lower and
-                    ("@" in url_lower or "/user/" in url_lower))
-
-        elif platform == "youtube":
-            return ("youtube.com/" in url_lower and
-                    any(valid in url_lower for valid in ["/c/", "/@", "/channel/", "/user/"]))
-
-        return False
-
-    def _extract_username(self, url: str, platform: str) -> str:
-        """Enhanced username extraction"""
-        try:
-            parsed = urlparse(url)
-            path = parsed.path.strip('/')
-
-            if platform == "facebook":
-                if 'profile.php' in url:
-                    return parse_qs(parsed.query).get('id', [''])[0]
-                if 'people/' in path:
-                    return path.split('people/')[1].split('/')[0]
-                return path.split('/')[0] if path else ''
-
-            elif platform == "twitter":
-                return path.split('/')[0] if path else ''
-
-            elif platform == "instagram":
-                return path.split('/')[0] if path else ''
-
-            elif platform == "linkedin":
-                if '/in/' in path:
-                    return path.split('/in/')[1].split('/')[0]
-                elif '/pub/' in path:
-                    return path.split('/pub/')[1].split('/')[0]
-                return ''
-
-            elif platform == "tiktok":
-                if '@' in path:
-                    return path.replace('@', '').split('/')[0]
-                elif '/user/' in path:
-                    return path.split('/user/')[1].split('/')[0]
-                return path.split('/')[0] if path else ''
-
-            elif platform == "youtube":
-                for prefix in ['/c/', '/@', '/channel/', '/user/']:
-                    if prefix in path:
-                        return path.split(prefix)[1].split('/')[0]
-                return ''
-
-            return ''
-
-        except Exception as e:
-            logger.error(f"Error extracting username from {url}: {e}")
-            return ''
-
-    def _deduplicate_social_results(self, results: List[SearchResult]) -> List[SearchResult]:
-        """Remove duplicate social media results"""
-        seen_urls = set()
-        unique_results = []
-
-        for result in results:
-            normalized_url = result.url.lower().rstrip('/')
-            if normalized_url not in seen_urls:
-                seen_urls.add(normalized_url)
-                unique_results.append(result)
-
-        return unique_results
 
 
 class ContentProcessor:
@@ -1555,45 +1440,46 @@ async def process_social_media_concurrently(social_profiles: List[Dict], target_
 
 # NEW SIMPLIFIED EXTRACTION FUNCTIONS
 
-async def fetch_all_urls_parallel(all_urls: List[str], apify_manager: APIfyScraperManager, fallback_scraper: OptimizedWebScraper) -> List[Dict]:
+async def fetch_all_urls_parallel(all_urls: List[str], apify_manager: APIfyScraperManager,
+                                  fallback_scraper: OptimizedWebScraper) -> List[Dict]:
     """Fetch content from all URLs asynchronously"""
-    
+
     semaphore = asyncio.Semaphore(CONCURRENT_FETCH_LIMIT)  # Max 10 concurrent
-    
+
     async def fetch_single_url(url: str) -> Dict:
         async with semaphore:
             try:
                 logger.info(f"Fetching content from: {url}")
-                
+
                 # Use APIFY + fallback scraping
                 html_content = await apify_manager.scraper.fetch_url_with_fallback(url, fallback_scraper)
-                
+
                 if html_content:
                     # Clean content with BeautifulSoup
                     soup = BeautifulSoup(html_content, 'html.parser')
-                    
+
                     # Remove unwanted elements
                     for element in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe']):
                         element.decompose()
-                    
+
                     # Remove comments
                     for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
                         comment.extract()
-                    
+
                     # Extract clean text content
                     clean_content = soup.get_text()
-                    
+
                     # Clean up the text
                     lines = clean_content.split('\n')
                     cleaned_lines = [line.strip() for line in lines if line.strip() and len(line.strip()) > 3]
                     final_content = ' '.join(cleaned_lines)
-                    
+
                     # Detect platform for social media
                     from utils import detect_platform_from_url
                     platform = detect_platform_from_url(url)
                     if platform == 'unknown':
                         platform = 'webpage'
-                    
+
                     return {
                         "url": url,
                         "status": "success",
@@ -1607,7 +1493,7 @@ async def fetch_all_urls_parallel(all_urls: List[str], apify_manager: APIfyScrap
                     platform = detect_platform_from_url(url)
                     if platform == 'unknown':
                         platform = 'webpage'
-                    
+
                     return {
                         "url": url,
                         "status": "failed",
@@ -1615,7 +1501,7 @@ async def fetch_all_urls_parallel(all_urls: List[str], apify_manager: APIfyScrap
                         "error": "Failed to fetch content",
                         "platform": platform
                     }
-                    
+
             except Exception as e:
                 logger.error(f"Error fetching {url}: {e}")
                 # Detect platform even for error cases
@@ -1623,28 +1509,28 @@ async def fetch_all_urls_parallel(all_urls: List[str], apify_manager: APIfyScrap
                 platform = detect_platform_from_url(url)
                 if platform == 'unknown':
                     platform = 'webpage'
-                
+
                 return {
                     "url": url,
-                    "status": "error", 
+                    "status": "error",
                     "content": "",
                     "error": str(e),
                     "platform": platform
                 }
-    
+
     # Process all URLs in parallel
     logger.info(f"Starting parallel fetch of {len(all_urls)} URLs")
     results = await asyncio.gather(*[fetch_single_url(url) for url in all_urls])
-    
+
     successful = sum(1 for r in results if r["status"] == "success")
     logger.info(f"Parallel fetch completed: {successful}/{len(all_urls)} successful")
-    
+
     return results
 
 
 async def extract_pii_from_each_page(fetch_results: List[Dict], target_name: str, openai_client) -> Dict[str, set]:
     """Extract PII from each page sequentially to avoid token limits"""
-    
+
     # Initialize final PII attributes
     final_attributes = {
         'Name': set(), 'Location': set(), 'Email': set(), 'Phone': set(),
@@ -1656,25 +1542,25 @@ async def extract_pii_from_each_page(fetch_results: List[Dict], target_name: str
         'Credit Card': set(), 'SSN': set(), 'Family Members': set(),
         'Occupation': set(), 'Salary': set(), 'Website': set()
     }
-    
+
     successful_extractions = 0
     failed_extractions = 0
-    
+
     # Process each successful fetch result
     for result in fetch_results:
         if result["status"] == "success" and result["content"]:
             try:
                 logger.info(f"Extracting PII from: {result['url']} ({result['platform']})")
-                
+
                 # Extract PII from single page
                 page_pii = await extract_pii_from_single_page(
-                    result["content"], 
-                    result["url"], 
+                    result["content"],
+                    result["url"],
                     target_name,
                     result.get("platform", "webpage"),
                     openai_client
                 )
-                
+
                 # Append to final attributes
                 for key, values in page_pii.items():
                     if key in final_attributes and values:
@@ -1682,27 +1568,28 @@ async def extract_pii_from_each_page(fetch_results: List[Dict], target_name: str
                             final_attributes[key].update(values)
                         elif values and str(values).strip():
                             final_attributes[key].add(str(values))
-                
+
                 successful_extractions += 1
                 logger.info(f"Successfully extracted PII from {result['url']}")
                 logger.info(f"PII extracted from {result['url']}: {[(k, len(v)) for k, v in page_pii.items() if v]}")
-                
+
                 # Rate limiting between GPT calls
                 await asyncio.sleep(GPT_RATE_LIMIT_DELAY)
-                
+
             except Exception as e:
                 logger.error(f"Failed to extract PII from {result['url']}: {e}")
                 failed_extractions += 1
         else:
             failed_extractions += 1
-    
+
     logger.info(f"PII extraction completed: {successful_extractions} successful, {failed_extractions} failed")
     return final_attributes
 
 
-async def extract_pii_from_single_page(content: str, url: str, target_name: str, platform: str, openai_client) -> Dict[str, set]:
+async def extract_pii_from_single_page(content: str, url: str, target_name: str, platform: str, openai_client) -> Dict[
+    str, set]:
     """Extract PII from a single page using GPT"""
-    
+
     # Initialize empty result
     empty_result = {
         'Name': set(), 'Location': set(), 'Email': set(), 'Phone': set(),
@@ -1714,7 +1601,7 @@ async def extract_pii_from_single_page(content: str, url: str, target_name: str,
         'Credit Card': set(), 'SSN': set(), 'Family Members': set(),
         'Occupation': set(), 'Salary': set(), 'Website': set()
     }
-    
+
     # Create page-specific prompt
     if platform != "webpage":
         system_prompt = f"Extract personal information from this {platform} page for '{target_name}'. Be precise and only extract information clearly related to this person."
@@ -1722,7 +1609,7 @@ async def extract_pii_from_single_page(content: str, url: str, target_name: str,
     else:
         system_prompt = f"Extract personal information from this webpage for '{target_name}'. Be precise and only extract information clearly related to this person."
         context = "This is a regular webpage."
-    
+
     user_prompt = f"""
     {context}
     URL: {url}
@@ -1766,7 +1653,7 @@ async def extract_pii_from_single_page(content: str, url: str, target_name: str,
     
     For multiple values, separate with commas.
     """
-    
+
     try:
         response = await asyncio.to_thread(
             openai_client.chat.completions.create,
@@ -1778,9 +1665,9 @@ async def extract_pii_from_single_page(content: str, url: str, target_name: str,
             temperature=0.1,
             max_tokens=2000  # Smaller limit for single page
         )
-        
+
         result = response.choices[0].message.content.strip()
-        
+
         # Clean JSON response
         if result.startswith('```json'):
             result = result[7:]
@@ -1788,9 +1675,9 @@ async def extract_pii_from_single_page(content: str, url: str, target_name: str,
             result = result[3:]
         if result.endswith('```'):
             result = result[:-3]
-        
+
         result = result.strip()
-        
+
         # Parse JSON
         try:
             pii_data = json.loads(result)
@@ -1800,7 +1687,7 @@ async def extract_pii_from_single_page(content: str, url: str, target_name: str,
             except:
                 logger.error(f"Failed to parse GPT response for {url}")
                 return empty_result
-        
+
         # Convert to sets and validate
         validated_pii = {}
         for key, value in pii_data.items():
@@ -1814,14 +1701,14 @@ async def extract_pii_from_single_page(content: str, url: str, target_name: str,
                     validated_pii[key] = {value_str}
             else:
                 validated_pii[key] = set()
-        
+
         # Log what was found
         found_items = sum(len(v) for v in validated_pii.values() if v)
         if found_items > 0:
             logger.info(f"Found {found_items} PII items from {url}")
-        
+
         return validated_pii
-        
+
     except Exception as e:
         logger.error(f"GPT extraction failed for {url}: {e}")
         return empty_result

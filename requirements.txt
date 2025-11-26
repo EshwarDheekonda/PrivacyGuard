@@ -15,7 +15,7 @@ apify-client==1.4.0
 google-cloud-secret-manager==2.18.2
 
 # Additional FastAPI dependencies
-pydantic==2.5.0
+pydantic==2.12.3
 python-multipart==0.0.6
 psutil==5.9.6
 

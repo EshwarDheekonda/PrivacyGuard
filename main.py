@@ -145,12 +145,13 @@ async def health_check():
 @app.get("/search")
 async def search_person_root(
     searchName: str = Query(..., description="Name to search for"),
+    parameters: str = Query(False, description="Search parameters"),
     includeSocial: bool = Query(True, description="Include social media search"),
-    maxResults: int = Query(45, description="Maximum results to return")
+    maxResults: int = Query(25, description="Maximum results to return")
 ):
     """Root-level search endpoint for backward compatibility"""
     from routes.search import search_person
-    return await search_person(searchName, includeSocial, maxResults)
+    return await search_person(searchName, parameters, includeSocial, maxResults)
 
 @app.post("/extract")
 async def extract_pii_root(request: dict):
@@ -187,7 +188,7 @@ async def performance_stats_root():
 if __name__ == "__main__":
     import socket
     
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5003))
     
     # Get local IP address
     def get_local_ip():
