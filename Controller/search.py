@@ -1,15 +1,58 @@
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import JSONResponse
-from typing import List, Dict, Optional
+from fastapi import APIRouter, Query
+from typing import List, Dict
 import asyncio
 import logging
 from datetime import datetime
 
 from core import AdvancedSearchEngine, SocialMediaSearcher
 from models import SearchResult
+from Service.Search import V2
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/search/v2")
+async def search(
+        name: str = Query(..., description="Name to search for"),
+        maxResults: int = Query(100, description="Maximum results to return")
+):
+    """Enhanced search endpoint with Google Custom Search API and comprehensive error handling"""
+
+    # Input validation
+
+    query = name.strip()
+
+    if not name or len(name.strip()) < 2:
+        return {
+            "error": "Search query too short",
+            "message": "Search query must be at least 2 characters long"
+        }
+
+    max_results = min(maxResults, 200)  # Limit results max
+
+    logger.info(f"Search request - Query: '{query}', Max results: {max_results}")
+
+    searchResults = []
+
+    try:
+        async with V2() as searchV2:
+            searchResults = await searchV2.searchTavily(name, maxResults)
+    except Exception as search_error:
+        logger.error(f"Error scraping results: {search_error}")
+
+    if not searchResults:
+        return []
+
+    logger.info(f"Found {searchResults} results for '{query}'")
+
+    try:
+        async with V2() as searchV2:
+            response = await searchV2.search_results_to_openai(name, searchResults)
+    except Exception as search_error:
+        logger.error(f"Error fetching search results: {search_error}")
+
+    return response
 
 @router.get("/search")
 async def search_person(

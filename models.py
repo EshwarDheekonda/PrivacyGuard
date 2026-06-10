@@ -19,6 +19,21 @@ class ExtractionResult:
     success: bool = True
     error: Optional[str] = None
 
+@dataclass
+class SearchData:
+    """Data class for search results"""
+    name : Optional[str]
+    age : Optional[str]
+    dob : Optional[str]
+    gender : Optional[str]
+    email : Optional[str]
+    public_phone : Optional[str]
+    personal_phone: Optional[str]
+    address : Optional[str]
+    profession : Optional[str]
+    organisation : Optional[str]
+    government_id : Optional[int]
+
 # Pydantic models for FastAPI request/response validation
 class SearchRequest(BaseModel):
     searchName: str

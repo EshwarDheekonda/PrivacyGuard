@@ -1,29 +1,17 @@
 import os
-import time
 import asyncio
 import aiohttp
 from aiohttp import ClientSession, ClientTimeout
 import json
-import requests
 import random
-from urllib.parse import quote_plus, urlparse, parse_qs, urljoin
-import itertools
-from collections import defaultdict
+
+from urllib.parse import quote_plus, urlparse
 from typing import List, Dict, Set, Tuple, Optional
 from bs4 import BeautifulSoup, Comment
 import logging
-from datetime import datetime, timedelta
-import hashlib
-import csv
-from io import StringIO
-import base64
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from difflib import SequenceMatcher
-from apify_scraper import APIfyCheerioScraper, APIfyScraperManager, test_apify_setup
-from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from apify_scraper import APIfyScraperManager
 from math import exp
+
 import ast
 import re
 
@@ -1154,13 +1142,13 @@ class RiskCalculator:
         """Get risk level from score"""
         if risk_score == 0:
             return 'No Risk'
-        elif risk_score <= 2.74:
+        elif risk_score <= 2.75:
             return 'Very Low'
-        elif 2.74 < risk_score <= 5.48:
+        elif 2.75 < risk_score <= 5.48:
             return 'Low'
-        elif 5.48 < risk_score <= 6.87:
+        elif 5.48 < risk_score <= 9:
             return 'Medium'
-        elif 6.87 < risk_score <= 12.25:
+        elif 10 < risk_score <= 12.25:
             return 'High'
         else:
             return 'Very High'

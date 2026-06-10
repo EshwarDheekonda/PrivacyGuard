@@ -1,5 +1,4 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter
 from datetime import datetime
 import logging
 from apify_scraper import test_apify_setup

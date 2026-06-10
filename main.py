@@ -1,35 +1,11 @@
 import os
-import time
-import asyncio
-import aiohttp
-from aiohttp import ClientSession, ClientTimeout
-import json
-from fastapi import FastAPI, HTTPException, Query, Body, Request
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from math import exp
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from openai import OpenAI
-import ast
-import re
-import requests
-import random
-from urllib.parse import quote_plus, urlparse, parse_qs, urljoin
-import itertools
-from collections import defaultdict
-from typing import List, Dict, Set, Tuple, Optional
-from bs4 import BeautifulSoup, Comment
+from typing import List, Dict, Optional
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-import hashlib
-import csv
-from io import StringIO
-import base64
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from difflib import SequenceMatcher
-from apify_scraper import APIfyCheerioScraper, APIfyScraperManager, test_apify_setup
+from datetime import datetime
 from dotenv import load_dotenv
 import uvicorn
 
@@ -111,8 +87,8 @@ class ExtractionResult:
 # Import all the existing classes and functions from the original file
 # We'll copy the core logic here to avoid circular imports
 
-# Import routes
-from routes import search, extract, health, performance
+# Import Controller
+from Controller import search, extract, health, performance
 
 # Include routers
 app.include_router(search.router, tags=["search"])
@@ -150,13 +126,13 @@ async def search_person_root(
     maxResults: int = Query(25, description="Maximum results to return")
 ):
     """Root-level search endpoint for backward compatibility"""
-    from routes.search import search_person
+    from Controller.search import search_person
     return await search_person(searchName, parameters, includeSocial, maxResults)
 
 @app.post("/extract")
 async def extract_pii_root(request: dict):
     """Root-level extract endpoint for backward compatibility"""
-    from routes.extract import extract_pii
+    from Controller.extract import extract_pii
     from models import ExtractRequest
     
     # Convert dict to ExtractRequest
@@ -170,20 +146,29 @@ async def extract_pii_root(request: dict):
 @app.get("/apify/health")
 async def apify_health_root():
     """Root-level APIFY health endpoint for backward compatibility"""
-    from routes.health import apify_health_check
+    from Controller.health import apify_health_check
     return await apify_health_check()
 
 @app.get("/apify/test")
 async def apify_test_root():
     """Root-level APIFY test endpoint for backward compatibility"""
-    from routes.health import apify_test
+    from Controller.health import apify_test
     return await apify_test()
 
 @app.get("/performance/stats")
 async def performance_stats_root():
     """Root-level performance stats endpoint for backward compatibility"""
-    from routes.performance import performance_stats
+    from Controller.performance import performance_stats
     return await performance_stats()
+
+
+@app.get("/search/v2")
+async def search_person(
+        name: str = Query(..., description="Name to search for"),
+        maxResults: int = Query(25, description="Maximum results to return")
+):
+    from Controller.search import search
+    return await search(name, maxResults)
 
 if __name__ == "__main__":
     import socket

@@ -1,9 +1,6 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
-from datetime import datetime
+from fastapi import APIRouter
 import logging
 import psutil
-import time
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
